@@ -1,0 +1,447 @@
+---
+title: "Linear Regression IV: Multiple Regression Model Selection and Training and Testing Data"
+author: ""
+date: "March 31, 2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+## Coming up
+- Exam 2 due at end of week.
+- No lab this week.
+
+## Main ideas
+
+- Review how to carry out and interpret multiple linear regressions.
+
+- Discuss different approaches to model selection.
+
+- Learn how to use training and testing data.
+
+## Packages
+
+We will use the same group of packages we have been using and are again using data from the `fivethirtyeight` package.
+
+```{r packages, include=FALSE}
+library(tidyverse)
+library(broom)
+library(viridis)
+library(fivethirtyeight)
+```
+
+## Data
+
+We will use the air quality dataset again and return to the candy rankings dataset in the `fivethirtyeight` package later in class. The practice problems will work with a subset of a dataset on congressional election results collected by Gary Jacobson (UCSD) and Jamie Carson (UGA).
+
+```{r data}
+airquality <- read.csv("~/airquality.csv")
+congelections <- read.csv("~/congelections_subset.csv")
+```
+
+## Please recall
+
+- The linear model with multiple predictors
+
+$$ \hat{y} = \beta_0 + \beta_1~x_1 + \beta_2~x_2 + \cdots + \beta_k~x_k +\epsilon $$
+
+- Sample model that we use to estimate the population model:
+  
+$$ \hat{y} = b_0 + b_1~x_1 + b_2~x_2 + \cdots + b_k~x_k $$
+ 
+- In multiple regression, in addition to interpreting main effects, should consider whether there is an interactive effect.
+  
+- When assessing model fit, the adjusted $R^2$ is preferable to the $R^2$ because of the penalty assessed for including extra explanatory variables that are not strong predictors of the level of the response variable.
+  
+- Conditions for Linear Regression
+  - Linearity: The relationship between response and predictor(s) is linear
+  - Independence: The residuals are independent
+  - Normality: The residuals are nearly normally distributed
+  - Equal Variance: The residuals have constant variance
+  
+  - These can be assessed using plots.
+  
+  - Also should consider whether your model has multicollinearity.
+
+## Returning to the Air Quality Data
+
+- We modeled a linear relationship between three response variables and ozone.
+
+- But is there a linear relationship?
+
+```{r simpleplot1}
+ggplot(data = airquality, 
+       aes(x = Solar.R, 
+           y = Ozone)) + 
+  geom_point()
+```
+
+```{r simpleplot2}
+ggplot(data = airquality, 
+       aes(x = Wind, 
+           y = Ozone)) + 
+  geom_point()
+```
+
+```{r simpleplot3}
+ggplot(data = airquality, 
+       aes(x = Temp, 
+           y = Ozone)) + 
+  geom_point()
+```
+
+- In these situations a transformation applied to the response variable may be useful.
+
+- In order to decide which transformation to use, we should examine the distribution of the response variable.
+
+- First, let's look at the distribution of `Ozone`.
+
+```{r ozone}
+m_air <- lm(Ozone ~ Solar.R + Wind + Temp, data = airquality)
+m_air_aug <- augment(m_air) 
+ggplot(m_air_aug, mapping = aes(x = Ozone)) +
+  geom_histogram()
+```
+
+- The extremely right skewed distribution suggests that a log transformation may be useful.
+    - log = natural log, $ln$
+    - Default base of the `log` function in R is the natural log: 
+    `log(x, base = exp(1))`
+
+```{r logtransform}
+airquality <- airquality %>%
+  mutate(log_ozone = log(Ozone))
+m_air_log <- lm(log_ozone ~ Solar.R + Wind + Temp, 
+                data = airquality)
+tidy(m_air_log)
+```
+
+## Linear Model with Log Tranformation
+
+$$ {log(\widehat{Ozone})} = -0.262 + 0.003~SolarR - 0.062~Wind + 0.049~Temp$$
+
+- For every additional degree Fahrenheit of temperature, the log ozone is 
+expected to be higher, on average, by 0.049, holding all else constant.
+
+- But what does that mean?
+
+## Working with logs
+
+- Subtraction and logs: $log(a) − log(b) = log(a / b)$
+
+- Natural logarithm: $e^{log(x)} = x$
+
+- We can use these identities to "undo" the log transformation
+
+## Interpreting models with log transformation
+
+$$\begin{align}0.049 &= \text{Slope}\\
+0.049 &= \dfrac{log(\text{Ozone at Temp + 1}) - log(\text{Ozone at Temp})}{1}\\
+0.049 &=log\left(\dfrac{\text{Ozone at Temp + 1}}{\text{Ozone at Temp}}\right)\\
+e^{0.049} &=e^{log\left(\frac{\text{Ozone at Temp + 1}}{\text{Ozone at Temp}}\right)}\\
+1.05 &\approx \dfrac{\text{Ozone at Temp + 1}}{\text{Ozone at Temp}}
+\end{align}$$
+For every one degree increase in temperature, ozone is expected to be higher, 
+on average, by a factor of $\text{exp}(0.049) = 1.05$ 
+
+We **multiply** instead of add.
+
+## Interpreting models with log transformation
+
+Alternatively...
+
+$$\widehat{log(Ozone)} = -0.262 + 0.003~SolarR - 0.062~Wind + 0.049~Temp$$
+
+
+$$\widehat{Ozone} = e^{-0.262 + 0.003~SolarR - 0.062~Wind + 0.049~Temp}$$
+
+$$\dfrac{e^{-0.262 + 0.003~SolarR - 0.062~Wind + 0.049~(Temp+1)}}{e^{-0.262 + 0.003~SolarR - 0.062~Wind + 0.049~Temp}} = \dfrac{e^{0.049~(Temp+1)}}{e^{0.049~Temp}} = e^{0.049}$$
+
+- For every one degree increase in temperature, ozone is expected to be higher, 
+on average, by a factor of $\text{exp}(0.049) = 1.05$. Again, we **multiply** instead of add.
+
+## Shortcuts in R
+
+```{r modeloutput}
+m_air_log %>%
+  tidy() %>%
+  select(term, estimate) %>%
+  mutate(estimate = round(estimate, 3))
+```
+
+```{r shortcut}
+m_air_log %>%
+  tidy() %>%
+  select(term, estimate) %>%
+  mutate(estimate = round(exp(estimate), 3))
+```
+
+## Recap
+
+- Non-constant variance is one of the most common model violations, however it 
+is usually fixable by transforming the response (y) variable.
+
+- The most common transformation when the response variable is right skewed is 
+the log transform: $log(y)$, especially useful when the response variable is 
+(extremely) right skewed.
+
+- When using a log transformation on the response variable the interpretation of 
+the slope changes: *"For each unit increase in x, y is expected to multiply by a factor of $e^{b_1}$."*
+
+- Another useful transformation is the square root: $\sqrt{y}$, especially 
+useful when the response variable is counts.
+
+## Transform, or learn more?
+
+- Data transformations may also be useful when the relationship is non-linear
+
+- However in those cases a polynomial regression may be more appropriate
+  + This is beyond the scope of this course, but you’re welcomed to try it for your final project, and I’d be happy to provide further guidance
+
+## Aside: when $y = 0$
+
+In some cases the value of the response variable might be 0, and
+
+```{r logzero}
+log(0)
+```
+
+The trick is to add a very small number to the value of the response variable for these cases so that the `log` function can still be applied:
+
+```{r logtrick}
+log(0 + 0.00001)
+```
+
+## Model Selection in Multiple Regression
+
+- So far, you have been told which variables to include in the model. But how do researchers decide which variables to include in a model?
+
+- We may decide to include an explanatory variable in a model to examine whether a significant relationship exists between the explanatory and response variable. 
+
+- Even when the topic of your study doesn't relate to a variable, you may still want to control for it if it may be important.
+
+- For example, you think that dessert consumption is related to weight gain. But is it the only factor that matters? 
+
+  - No! You may (among other factors) want to control for amount of exercise or
+changes to other parts of the person's diet. And you will want to see if the coefficient for dessert consumption remains significant when you include these variables.
+
+- We also use models for prediction. While it may seem tempting to include as many variables as possible in a model, including variables that may not be important can reduce the accuracy of predictions.
+
+- You may prune variables from a model in order to achieve a **parsimonious** model that gives you a more accurate predictions.
+
+- The model with all of the variables is called the **full model**. But the full model does not always give you the best prediction. 
+
+- But how do you decide which variables to include?
+
+## Backward elimination and forward selection
+
+- One method is known as **backward elimination**. Here, you begin with all of the potential predictor variables and eliminate them one at a time.
+  - One approach to backward elimination is the **$R^2$ approach**. Here, you eliminate variables from the model until you get the highest adjusted $R^2$. 
+  - One approach to backward elimination is the **p-value approach**. Here, you eliminate variables until the largest p-value is below 0.05.
+
+- Another method is known as **forward selection**. Here, you *add* variables one at a time.
+  - The forward selection method also has both a **$R^2$ approach** and a **p-value approach.** 
+  
+## Example
+
+- Let's return to the candy rankings dataset.
+
+- Let's begin with backwards elimination and start with a model with win percentage  as the response variable and sugar percentile, price percentile, and a dummy variable for whether the candy has chocolate as response variables. (There are obviously other variables one could include here, but we are going to limit it to these for this example.)
+
+- First, let's create the variables on the scale from 0 to 100.
+
+```{r mutatesugar}
+candy_rankings<- candy_rankings %>%
+  mutate(sugarpercent100 = sugarpercent * 100)
+```
+
+```{r mutateprice}
+candy_rankings<- candy_rankings %>%
+  mutate(pricepercent100 = pricepercent * 100)
+```
+
+- Then, we can run the model and get the adjusted $R^2$.
+
+```{r newvars}
+fullmodel <- lm (winpercent ~ sugarpercent100 + pricepercent100 + chocolate, data=candy_rankings)
+tidy(fullmodel)
+```
+
+```{r rsq}
+glance(fullmodel) %>% 
+  pull(adj.r.squared)
+```
+
+We can see here that the adjusted $R^2$ is 0.412. Can we get a higher adjusted $R^2$? Notice here that price is far from statistical significance. It may not be contributing to model fit. Let's remove it and see what happens to the adjusted $R^2$. 
+
+```{r rsq2}
+noprice<- lm (winpercent ~ sugarpercent100 + chocolate, data=candy_rankings)
+tidy(noprice)
+glance(noprice) %>% 
+  pull(adj.r.squared)
+```
+
+- Indeed, the adjusted $R^2$ increases when we remove price from the model!
+
+- Notice however, that adjusted $R^2$ does not improve when we remove the chocolate variable, so we would keep it in if we were using the $R^2$ approach. If we were using the p-value approach, however, we would remove the sugar variable because our p-value is slightly above 0.05.
+
+```{r rsq3}
+justchocolate<- lm (winpercent ~ chocolate, data=candy_rankings)
+tidy(justchocolate)
+glance(justchocolate) %>% 
+  pull(adj.r.squared)
+```
+
+If we were using the p-value approach, however, we would remove the sugar variable because our p-value is slightly above 0.05.
+
+**Question** How would our approach here have been different if we were using forward selection?
+
+## P-Hacking
+
+Notice here that our p-value for the sugar percentile variable is **REALLY CLOSE** to 0.05. While arbitrary, this threshold is important in statistics and is sometimes used as the cutoff to determine whether results are publishable. [FiveThirtyEight](https://projects.fivethirtyeight.com/p-hacking) has a interactive page showing how you can p-hack your way to publication. 
+
+How could we p-hack our way to a significant result for the sugar variable? 
+
+Let's try adding the variable for whether the variable is a hard candy.
+
+```{r}
+addhardcandy <- lm (winpercent ~ sugarpercent100 + chocolate + hard, data=candy_rankings)
+tidy(addhardcandy)
+```
+
+We now have statistically significant results for our main variable of interest! But there are some data ethics issues with this approach.
+
+**Question**: Why is p-hacking problematic?
+
+## Model Overfitting 
+
+- Getting a high adjusted $R^2$ value means that you have a model that explains a lot of the variation in the dependent variable. 
+
+- However, there is such a thing as having a model that fits the data *too well.*
+
+- When a model explains the data you have very well, but doesn't generalize well to out-of-sample data you may have a problem of **overfitting.**
+
+## Training and Testing Data
+
+- One thing we can do to address the issue of overfitting is to split our data into training and testing data.
+
+- We can build our model with the training data and then see how well it generalizes to the testing data.
+
+## An Example
+
+- Let's divide the candy data into [training and testing data](https://hollyemblem.medium.com/training-and-test-dataset-creation-with-dplyr-41d9aa7eab31). (We are setting the seed here so that we get the same training and testing datasets. Note: typically you will have a higher percentage of the data in the training dataset. Here, we do a 50/50 split due to sample size.)
+
+```{r buildtraintest}
+#First, we create an ID for each row.
+set.seed(318)
+candy_rankings <- candy_rankings %>% 
+  mutate(id = row_number())
+#Then, we create our training set.
+train <- candy_rankings %>% 
+  sample_frac(.5)
+#Finally, we create our testing set. 
+test  <- anti_join(candy_rankings, train, by = 'id')
+```
+
+- Then, we build a model with the training data. Let's build a model with win percentile as the dependent variable and sugar percentile and chocolate as our predictors, the two variables that remained when we used the backward elimination $R^2$ approach. (Notice that our coefficients are slightly different here and that our standard errors get bigger here. This is a result of the fact we are not using all of the data and have a smaller sample size.)
+
+```{r trainingmodel}
+fullmodeltrain <- lm (winpercent ~ sugarpercent100 + chocolate, data = train)
+tidy(fullmodeltrain)
+```
+
+- One way to evaluate the model is to then look at what values the model would predict in the testing data.
+
+- Here, we look at this prediction and then create a tibble the with the prediction and the actual value and compare how well the model with the training data actually predicts the values in the testing data.
+
+```{r prediction}
+prediction <- predict(fullmodeltrain, newdata = test)
+predictiondata <- tibble(prediction, test$winpercent, prediction-test$winpercent)
+predictiondata
+
+predictiondata %>%
+  summarize(meanabserror = mean(abs(prediction-test$winpercent)))
+```
+
+- If we just look at a model with one explanatory variable, we can also plot the bivariate relationship between sugar percentile and win percentage in our testing data and then place the regression line from our training data on the plot.
+
+- First, we need to get the slope and intercept from our training data.
+
+```{r simplemodel}
+sugarmodeltrain <- lm (winpercent ~ sugarpercent100, data = train)
+tidy(sugarmodeltrain)
+```
+
+- Now we can plot our testing data and include a line for the model from the training data.
+
+```{r plottraintest}
+ggplot(data = test, 
+       aes(x = sugarpercent100, y = winpercent)) + 
+  labs(x = "Win Percent", y = "Sugar Percentile") + 
+  geom_point() + 
+  geom_smooth(method="lm", se = FALSE) +
+  geom_abline(data = train, 
+              aes(intercept = 39.4, slope = 0.215),  
+              color = "red")
+```
+
+- As we can see here, the model doesn't fit the testing data particularly well.
+
+- Notice that this regression line fits the training data much better.
+```{r plottrain}
+ggplot(data = train, 
+       aes(x = sugarpercent100, y = winpercent)) + 
+  labs(x = "Win Percent", y = "Sugar Percentile") + 
+  geom_point() + 
+  geom_smooth(method="lm", se = FALSE) 
+```
+
+- This is a simplified example of what can happen with a model that is overfitted. It may fit the training data well, but not fit the testing data nearly as well. 
+
+- There is much more you can do with training and testing data, but this is an initial introduction to this concept. 
+
+## Practice
+
+- Here we are going to use data from the congressional elections subset. This dataset includes results of congressional elections since 1994.
+
+The variables in this dataset are as follows:
+- `year`: year of the election.
+
+- `stcd`: code for the state and district in alphabetic order (e.g., 101 represents Alabama's 1st district)
+
+- `dv`: vote received by the Democratic candidate for Congress in that district
+
+- `dpres`: vote received by the Democratic presidential candidate in the most recent election
+
+- `redist`: dummy variable measuring whether the seat has been redistricted since the last election
+
+- `dexp`: amount spent by the Democratic congressional candidate in the election.
+
+- `rexp`: amount spent by the Republican congressional candidate in the election.
+
+1. Create a model explaining the vote share for Democratic candidates in the most recent election using the forward selection p-value approach. As explanatory variables, please consider the vote share for the Democratic presidential candidate in the most recent election, whether the seat has been redistricting since the last election, and the *net* spending for the Democratic candidate (that is, how much more they spent than their Republican opponent). (Hint: you will have to create a new variable here.)
+
+```{r pricemodel}
+
+```
+
+2. **Question**: After constructing the model, what might you do to the net spending variable due to the really small coefficient?
+
+3. Split the data into training and testing data using the data you chose. Then examine how well the model using training data predicts values in the testing data. 
+
+```{r trainingtestingcong}
+
+```
+
+```{r predictiondv}
+
+```
+
+## Sources
+
+Emblem, Holly. "Training and test dataset creation with dpylr." https://hollyemblem.medium.com/training-and-test-dataset-creation-with-dplyr-41d9aa7eab31
+
+## For next class
+- No class on Monday- time for statistical experience
+- For next Wednesday, please read OIS section 9.5
+
